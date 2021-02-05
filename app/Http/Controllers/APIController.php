@@ -9,13 +9,17 @@ use App\Services\ReportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\Rule;
 use App\Models\Subscription;
+use App\Virtual\Models\DeviceRegistrationResponse;
 use Illuminate\Http\Request;
 use App\Models\Device;
 use Throwable;
 use Log;
 use DB;
 
-class APIController extends BaseController
+use Symfony\Component\HttpFoundation\Response;
+use Validator;
+use Carbon\Carbon;
+class APIController
 {
     /**
      * @param Request $request
@@ -60,56 +64,33 @@ class APIController extends BaseController
     public function register(Request $request)
     {
         try {
-            $this->validateRequest($request, $this->registerRules());
+            $validator = Validator::make($request->all(), $this->registerRules());
+            if ($validator->passes()) { 
+                $uId = $request->get(Device::COLUMN_U_ID);
+                $appId = $request->get(Device::COLUMN_APP_ID);
+                $lang = $request->get(Device::COLUMN_LANG);
+                $os = $request->get(Device::COLUMN_OS);
 
-            $uId = $request->get(Device::COLUMN_U_ID);
-            $appId = $request->get(Device::COLUMN_APP_ID);
-            $lang = $request->get(Device::COLUMN_LANG);
-            $os = $request->get(Device::COLUMN_OS);
+                DB::beginTransaction();
 
-            DB::beginTransaction();
-
-            $device = Device::addNewDevice($uId, $appId, $lang, $os);
-
-            DB::commit();
-
-            return $this->jsonResponse(
-                [
-                    'message' => 'the device successfully has been added to the DB',
-                    Device::COLUMN_CLIENT_TOKEN => $device->getClientToken(),
-                ]
-            );
-
-        } catch (ValidationException $exception) {
-
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage(),
-                    'errors' => $exception->getValidateExceptions()
-                ],
-                self::HTTP_RESPONSE_NOT_ACCEPTABLE
-            );
+                $device = Device::addNewDevice($uId, $appId, $lang, $os);
+                $message = 'Device successfully registered';
+                DB::commit();
+                return response()->json(['success', $message, $device->getClientToken()], Response::HTTP_OK) ;
+            }else{
+                $message = "Invalid input";
+                return response()->json(['failed', $message, null], Response::HTTP_NOT_ACCEPTABLE) ;
+            }
 
         } catch (DeviceExistsException $exception) {
-
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage()
-                ],
-                self::HTTP_RESPONSE_CONFLICT
-            );
-
-
+            
+            $message = $exception->getMessage();
+            return response()->json(['failed', $message, null], Response::HTTP_CONFLICT);
         } catch (Throwable $exception) {
 
             Log::error($exception);
-            return $this->jsonResponse(
-                [
-                    'message' => 'something bad has been occurred!'
-                ],
-                self::HTTP_RESPONSE_ERROR
-            );
-
+            $message = 'server error';
+            return response()->json(['failed', $message, null], Response::HTTP_INTERNAL_SERVER_ERROR);
         } finally {
 
             if (DB::transactionLevel() > 0) {
@@ -162,7 +143,8 @@ class APIController extends BaseController
      *      ),
      *      @OA\Response(
      *          response=201,
-     *          description="Successful operation"
+     *          description="Successful operation",
+     *          @OA\JsonContent(ref="#/components/schemas/PurchaseResponse")
      *       ),
      *      @OA\Response(
      *          response=400,
@@ -191,61 +173,48 @@ class APIController extends BaseController
     public function purchase(Request $request)
     {
         try {
-            $this->validateRequest($request, $this->purchaseRules());
+            $validator = Validator::make($request->all(), $this->purchaseRules());
+            
+            if ($validator->passes()) { 
+                $clientToken = $request->get(Subscription::COLUMN_CLIENT_TOKEN);
+                $receipt = $request->get(Subscription::COLUMN_RECEIPT);
+    
+                $device = Device::getByClientToken($clientToken);
+                
+                 DB::beginTransaction();
+                $receiptverification = ReceiptVerificationController::verify($device, $receipt);
+                $receiptverification  = json_decode($receiptverification, true)['original'];
+                
+                $expire_date = $receiptverification["expire_date"];
 
-            $clientToken = $request->get(Subscription::COLUMN_CLIENT_TOKEN);
-            $receipt = $request->get(Subscription::COLUMN_RECEIPT);
+                if ($receiptverification["status"] == "valid") {
+                    
+                    $subscription = Subscription::registerSubscription($device->getClientToken(), $receipt, Carbon::parse($expire_date));
 
-            $device = Device::getByClientToken($clientToken);
+                    DB::commit();
+                    $message = "Successful purchase";
+                }else{
+                    return $receiptverification;
+                    $message = "Failed purchase";
+                }
+                
+                $status = $receiptverification["status"]=='valid' ? 'Success' : 'Failed';
+                return response()->json([$status, $message, $expire_date], Response::HTTP_OK);
+            }else{
 
-            DB::beginTransaction();
-            $subscription = Subscription::verify($device, $receipt);
-            DB::commit();
-
-            if ($subscription !== null) {
-                $expiration = $subscription->getExpireAt();
-                $message = "subscription for $clientToken successfully registered till $expiration";
-
-            } else {
-                $message = "subscription for $clientToken was denied by the provider!";
-
+                $message = "Invalid input";
+                return response()->json(['Failed', $message, null], Response::HTTP_NOT_ACCEPTABLE);
             }
 
-            return $this->jsonResponse(
-                [
-                    'result' => $subscription!==null ? 'Success' : 'Failed',
-                    'message' => $message
-                ]
-            );
-
         } catch (NotFoundException $exception) {
-
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage(),
-                ],
-                self::HTTP_RESPONSE_NOT_FOUND
-            );
-
-        } catch (ValidationException $exception) {
-
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage(),
-                    'errors' => $exception->getValidateExceptions()
-                ],
-                self::HTTP_RESPONSE_NOT_ACCEPTABLE
-            );
+            $message = $exception->getMessage();
+            return response()->json(['Failed', $message, null], Response::HTTP_NOT_FOUND);
 
         } catch (Throwable $exception) {
 
             Log::error($exception);
-            return $this->jsonResponse(
-                [
-                    'message' => 'Something bad has been occurred!'
-                ],
-                self::HTTP_RESPONSE_ERROR
-            );
+            $message = 'Server error';
+            return response()->json(['failed', $message, null], Response::HTTP_INTERNAL_SERVER_ERROR);
 
         } finally {
 
@@ -286,7 +255,7 @@ class APIController extends BaseController
      *          name="client_token",
      *          description="Unique Client Token",
      *          required=true,
-     *          in="path",
+     *          in="query",
      *          @OA\Schema(
      *              type="string"
      *          )
@@ -317,45 +286,27 @@ class APIController extends BaseController
     public function check(Request $request)
     {
         try {
-            $this->validateRequest($request, $this->checkRules());
-
-            $clientToken = $request->get(Subscription::COLUMN_CLIENT_TOKEN);
-            $subscription = Subscription::getByClientToken($clientToken);
-
-            return $this->jsonResponse(
-                [
-                    'status' => $subscription->getStatus(),
-                ]
-            );
+            
+            $validator = Validator::make($request->all(), $this->checkRules());
+            
+            if ($validator->passes()) { 
+                $clientToken = $request->get(Subscription::COLUMN_CLIENT_TOKEN);
+                $subscription = Subscription::getByClientToken($clientToken);
+    
+                return response()->json(['success', $subscription->getStatus()], Response::HTTP_OK);
+            }else{
+                return response()->json(['failed', "Invalid input"], Response::HTTP_NOT_ACCEPTABLE);
+            }
 
         } catch (NotFoundException $exception) {
 
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage(),
-                ],
-                self::HTTP_RESPONSE_NOT_FOUND
-            );
-
-        } catch (ValidationException $exception) {
-
-            return $this->jsonResponse(
-                [
-                    'message' => $exception->getMessage(),
-                    'errors' => $exception->getValidateExceptions()
-                ],
-                self::HTTP_RESPONSE_NOT_ACCEPTABLE
-            );
+            return response()->json(['failed', $exception->getMessage()], Response::HTTP_NOT_FOUND);
 
         } catch (Throwable $exception) {
 
+            $message = 'Server error';
             Log::error($exception);
-            return $this->jsonResponse(
-                [
-                    'message' => 'Something bad has been occurred!'
-                ],
-                self::HTTP_RESPONSE_ERROR
-            );
+            return response()->json(['failed', $message], Response::HTTP_INTERNAL_SERVER_ERROR);
 
         }
     }
@@ -374,17 +325,44 @@ class APIController extends BaseController
         ];
     }
 
+
+    /**
+     * @OA\GET(
+     *      path="/report",
+     *      operationId="report",
+     *      tags={"report"},
+     *      summary="Generate Report",
+     *      description="Reports showing new, expired and renewed subscriptions on the basis of app, day and OS.",
+     *      @OA\Response(
+     *          response=201,
+     *          description="Successful operation",
+     *          @OA\JsonContent(ref="#/components/schemas/DeviceRegistrationResponse")
+     *       ),
+     *      @OA\Response(
+     *          response=400,
+     *          description="Bad Request"
+     *      ),
+     *      @OA\Response(
+     *          response=401,
+     *          description="Unauthenticated",
+     *      ),
+     *      @OA\Response(
+     *          response=403,
+     *          description="Forbidden"
+     *      ),
+     *      @OA\Response(
+     *          response=500,
+     *          description="something bad has been occurred!"
+     *      )
+     * )
+     */
+
     /**
      * @return JsonResponse
      */
     public function report()
     {
         $data = ReportService::get();
-
-        return $this->jsonResponse(
-            [
-                'data' => $data,
-            ]
-        );
+        return response()->json(['success', $data], Response::HTTP_OK);
     }
 }

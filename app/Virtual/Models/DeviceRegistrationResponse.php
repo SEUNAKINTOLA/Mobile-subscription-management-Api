@@ -16,7 +16,7 @@ class DeviceRegistrationResponse
     /**
      * @OA\Property(
      *      title="result",
-     *      description="Result textName of the new project",
+     *      description="Successful registration response",
      *      example="Ok"
      * )
      *

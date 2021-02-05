@@ -101,28 +101,8 @@ class Subscription extends BaseModel
             ->first();
     }
 
-    /**
-     * @param Device $device
-     * @param string $receipt
-     * @return Subscription|null
-     * @throws NotFoundException|RateLimitException
-     */
-    public static function verify(Device $device, string $receipt): ?self
-    {
-        $subscription = null;
 
-        $result = $device-> verify($receipt);
-
-        $status = $result['status'];
-        $expiration = null;
-
-        if ($status == 'success') {
-            $expiration = $result['expiration'];
-            $subscription = self::registerSubscription($device->getClientToken(), $receipt, $expiration);
-        }
-
-        return $subscription;
-    }
+    
 
     /**
      * @throws NotFoundException|RateLimitException
@@ -158,7 +138,7 @@ class Subscription extends BaseModel
      * @return Subscription
      * @throws NotFoundException
      */
-    private static function registerSubscription(string $clientToken, string $receipt, Carbon $expireAt): Subscription
+    public static function registerSubscription(string $clientToken, string $receipt, Carbon $expireAt): Subscription
     {
         $subscription = Subscription::getByClientToken($clientToken, false);
 

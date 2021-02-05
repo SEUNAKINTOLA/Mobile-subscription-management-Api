@@ -83,7 +83,14 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "Successful operation"
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PurchaseResponse"
+                                }
+                            }
+                        }
                     },
                     "400": {
                         "description": "Bad Request"
@@ -111,7 +118,7 @@
                 "parameters": [
                     {
                         "name": "client_token",
-                        "in": "path",
+                        "in": "query",
                         "description": "Unique Client Token",
                         "required": true,
                         "schema": {
@@ -119,6 +126,40 @@
                         }
                     }
                 ],
+                "responses": {
+                    "201": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeviceRegistrationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "description": "Unauthenticated"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "500": {
+                        "description": "something bad has been occurred!"
+                    }
+                }
+            }
+        },
+        "/report": {
+            "get": {
+                "tags": [
+                    "report"
+                ],
+                "summary": "Generate Report",
+                "description": "Reports showing new, expired and renewed subscriptions on the basis of app, day and OS.",
+                "operationId": "report",
                 "responses": {
                     "201": {
                         "description": "Successful operation",
@@ -154,7 +195,7 @@
                 "properties": {
                     "result": {
                         "title": "result",
-                        "description": "Result textName of the new project",
+                        "description": "Successful registration response",
                         "type": "string",
                         "example": "Ok"
                     },
@@ -174,6 +215,34 @@
                 "type": "object",
                 "xml": {
                     "name": "DeviceRegistrationResponse"
+                }
+            },
+            "PurchaseResponse": {
+                "title": "PurchaseResponse",
+                "description": "Device model",
+                "properties": {
+                    "status": {
+                        "title": "status",
+                        "description": "Successful Purchase",
+                        "type": "string",
+                        "example": "Success"
+                    },
+                    "message": {
+                        "title": "message",
+                        "description": "Registration message",
+                        "type": "string",
+                        "example": "Successful purchase"
+                    },
+                    "expire_date": {
+                        "title": "expire_date",
+                        "description": "Subscription expiry date",
+                        "type": "string",
+                        "example": "2020-01-01"
+                    }
+                },
+                "type": "object",
+                "xml": {
+                    "name": "PurchaseResponse"
                 }
             },
             "PurchaseRequest": {

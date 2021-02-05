@@ -135,23 +135,6 @@ class Device extends BaseModel
             ->exists();
     }
 
-    /**
-     * @param string $receipt
-     * @return array
-     * @throws RateLimitException
-     */
-    public function verify(string $receipt): array
-    {
-        $storeService = $this->getStoreService();
-        return $storeService->verification($this->getAppId(), $receipt);
-    }
 
-    private function getStoreService(): IStoreService
-    {
-        if ($this->getOS() === self::OS_IOS) {
-            return (new AppleStoreService());
-        }
-
-        return (new GooglePlayService());
-    }
+    
 }
