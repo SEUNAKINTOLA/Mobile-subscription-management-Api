@@ -1,4 +1,4 @@
-## Teknasyon Test
+MOBILE APPLICATION SUBSCRIPTION MANAGEMENT API / CALLBACK / WORKER from iOS or Android App
 
 #### Running Application
 Run the following commands
